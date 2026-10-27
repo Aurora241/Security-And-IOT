@@ -24,12 +24,17 @@ import time
 
 import cv2
 import requests
+import torch
 from ultralytics import YOLO
 
 MODEL_NAME = "yolov8n.pt"
 PERSON_CLASS_ID = 0
 CONF_THRESHOLD = 0.5
 DEBOUNCE_FRAMES = 3  # can >=3 frame lien tiep deu thay nguoi moi goi API bao xam nhap
+# ultralytics KHONG tu nhan GPU neu khong truyen device - may nay co GTX 1650
+# (~13ms/frame qua GPU so voi ~53ms/frame qua CPU, da do thuc), nen uu tien GPU khi co -
+# quan trong cho camera IP sau nay (stream FPS/do phan giai cao hon webcam nhieu).
+DEVICE = 0 if torch.cuda.is_available() else "cpu"
 
 BACKEND_URL = "http://localhost:8001/api/v1/alarm/detections"
 CAMERA_ID = "173888ec-b468-45a6-8482-58f0f7ae0be6"  # id thuc cua camera "Webcam Laptop" trong Supabase
@@ -79,7 +84,7 @@ def main():
         if not ret:
             break
 
-        results = model.predict(frame, conf=CONF_THRESHOLD, classes=[PERSON_CLASS_ID], verbose=False)
+        results = model.predict(frame, conf=CONF_THRESHOLD, classes=[PERSON_CLASS_ID], device=DEVICE, verbose=False)
         result = results[0]
         has_person = len(result.boxes) > 0
 

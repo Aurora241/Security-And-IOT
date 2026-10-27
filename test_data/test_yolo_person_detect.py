@@ -16,6 +16,7 @@ Chay webcam:   yolo_env\\Scripts\\python.exe test_data\\test_yolo_person_detect.
 import sys
 from pathlib import Path
 
+import torch
 from ultralytics import YOLO
 import cv2
 
@@ -25,6 +26,9 @@ MODEL_NAME = "yolov8n.pt"  # ban nano - nhe, nhanh, du de sanity-check tren lapt
 PERSON_CLASS_ID = 0
 CONF_THRESHOLD = 0.5
 SAMPLE_IMAGES = ["test_1.jpg", "test_2.jpg", "ngocanh_01.jpg"]
+# ultralytics KHONG tu nhan GPU neu khong truyen device - may nay co GTX 1650
+# (~13ms/frame qua GPU so voi ~53ms/frame qua CPU, da do thuc), nen uu tien GPU khi co.
+DEVICE = 0 if torch.cuda.is_available() else "cpu"
 
 
 def draw_detections(frame, result):
@@ -42,7 +46,7 @@ def run_on_sample_images(model):
     any_detected = False
     for name in SAMPLE_IMAGES:
         img_path = SCRIPT_DIR / name
-        results = model.predict(str(img_path), conf=CONF_THRESHOLD, classes=[PERSON_CLASS_ID], verbose=False)
+        results = model.predict(str(img_path), conf=CONF_THRESHOLD, classes=[PERSON_CLASS_ID], device=DEVICE, verbose=False)
         result = results[0]
         n = len(result.boxes)
         print(f"{name}: phat hien {n} nguoi"
@@ -76,7 +80,7 @@ def run_on_webcam(model):
         if not ret:
             break
 
-        results = model.predict(frame, conf=CONF_THRESHOLD, classes=[PERSON_CLASS_ID], verbose=False)
+        results = model.predict(frame, conf=CONF_THRESHOLD, classes=[PERSON_CLASS_ID], device=DEVICE, verbose=False)
         result = results[0]
         draw_detections(frame, result)
 
