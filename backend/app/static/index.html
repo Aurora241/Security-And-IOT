@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<title>Demo dang ky Access Control</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 900px; margin: 24px auto; padding: 0 16px; background: #f5f6f8; }
+  h1 { font-size: 20px; }
+  .row { display: flex; gap: 16px; margin-top: 16px; }
+  .card { flex: 1; background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 16px; }
+  .card h2 { margin-top: 0; font-size: 16px; }
+  select, button { font-size: 14px; padding: 8px 12px; border-radius: 6px; border: 1px solid #ccc; cursor: pointer; }
+  button { background: #2563eb; color: #fff; border: none; }
+  button:disabled { background: #9ca3af; cursor: not-allowed; }
+  video, canvas { width: 100%; border-radius: 6px; background: #000; margin-top: 8px; }
+  canvas { display: none; }
+  .status { margin-top: 10px; font-size: 14px; padding: 8px; border-radius: 6px; }
+  .status.ok { background: #dcfce7; color: #166534; }
+  .status.err { background: #fee2e2; color: #991b1b; }
+  .status.wait { background: #fef9c3; color: #854d0e; }
+  #employeeBox { background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 16px; }
+</style>
+</head>
+<body>
+  <h1>Demo dang ky Access Control (khuon mat + van tay)</h1>
+
+  <div id="employeeBox">
+    <label>Chon nhan vien: </label>
+    <select id="employeeSelect"></select>
+  </div>
+
+  <div class="row">
+    <div class="card">
+      <h2>1. Dang ky khuon mat</h2>
+      <video id="video" autoplay playsinline muted></video>
+      <canvas id="canvas"></canvas>
+      <div style="margin-top:8px; display:flex; gap:8px;">
+        <button id="btnStartCam">Bat camera</button>
+        <button id="btnCapture" disabled>Chup & dang ky</button>
+      </div>
+      <div id="faceStatus" class="status" style="display:none;"></div>
+    </div>
+
+    <div class="card">
+      <h2>2. Dang ky van tay (qua ESP32)</h2>
+      <p style="font-size:13px; color:#555;">
+        Bam nut, ESP32 se tu dong bat dau quet - chi can dat ngon tay len cam bien AS608
+        2 lan khi duoc yeu cau (khong can dong gi tren Serial Monitor).
+      </p>
+      <button id="btnWaitFinger">Bat dau dang ky van tay</button>
+      <div id="fingerStatus" class="status" style="display:none;"></div>
+    </div>
+  </div>
+
+  <h1 style="margin-top:32px;">Test xac thuc (verify nhung nguoi da dang ky)</h1>
+  <div class="row">
+    <div class="card">
+      <h2>3. Test khuon mat</h2>
+      <video id="videoVerify" autoplay playsinline muted></video>
+      <canvas id="canvasVerify"></canvas>
+      <div style="margin-top:8px; display:flex; gap:8px;">
+        <button id="btnStartCamVerify">Bat camera</button>
+        <button id="btnVerifyFace" disabled>Chup & xac thuc</button>
+      </div>
+      <div id="faceVerifyStatus" class="status" style="display:none;"></div>
+    </div>
+
+    <div class="card">
+      <h2>4. Test van tay</h2>
+      <p style="font-size:13px; color:#555;">
+        Bam nut, dat ngon tay len cam bien AS608 khi duoc yeu cau. He thong se bao
+        khop hay khong khop voi nhan vien dang chon o tren.
+      </p>
+      <button id="btnVerifyFinger">Bat dau xac thuc van tay</button>
+      <div id="fingerVerifyStatus" class="status" style="display:none;"></div>
+    </div>
+  </div>
+
+<script>
+const API = "/api/v1";
+const DEVICE_ID = "esp32_test_01";
+let employees = [];
+let stream = null;
+
+async function loadEmployees() {
+  const res = await fetch(`${API}/employees`);
+  employees = await res.json();
+  const sel = document.getElementById("employeeSelect");
+  sel.innerHTML = employees.map(e => `<option value="${e.id}" data-code="${e.code}">${e.code} - ${e.full_name}</option>`).join("");
+}
+
+function currentEmployee() {
+  const sel = document.getElementById("employeeSelect");
+  const opt = sel.options[sel.selectedIndex];
+  return { id: sel.value, code: opt ? opt.dataset.code : "" };
+}
+
+function showStatus(elId, cls, text) {
+  const el = document.getElementById(elId);
+  el.className = `status ${cls}`;
+  el.style.display = "block";
+  el.textContent = text;
+}
+
+// ---- Khuon mat ----
+document.getElementById("btnStartCam").addEventListener("click", async () => {
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ video: true });
+    document.getElementById("video").srcObject = stream;
+    document.getElementById("btnCapture").disabled = false;
+  } catch (e) {
+    showStatus("faceStatus", "err", "Khong mo duoc camera: " + e.message);
+  }
+});
+
+document.getElementById("btnCapture").addEventListener("click", async () => {
+  const emp = currentEmployee();
+  if (!emp.id) return;
+
+  const video = document.getElementById("video");
+  const canvas = document.getElementById("canvas");
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  canvas.getContext("2d").drawImage(video, 0, 0);
+  const imageBase64 = canvas.toDataURL("image/jpeg", 0.9);
+
+  showStatus("faceStatus", "wait", "Dang trich embedding va luu, cho vai giay...");
+  document.getElementById("btnCapture").disabled = true;
+
+  try {
+    const res = await fetch(`${API}/employees/${emp.id}/credentials/face`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ employee_id: emp.id, image_base64: imageBase64 }),
+    });
+    const data = await res.json();
+    if (res.ok) {
+      showStatus("faceStatus", "ok", `Dang ky thanh cong cho ${emp.code}! Credential ID: ${data.id}`);
+    } else {
+      showStatus("faceStatus", "err", "Loi: " + (data.detail || JSON.stringify(data)));
+    }
+  } catch (e) {
+    showStatus("faceStatus", "err", "Loi ket noi: " + e.message);
+  } finally {
+    document.getElementById("btnCapture").disabled = false;
+  }
+});
+
+// ---- Van tay: goi lenh xuong ESP32 qua MQTT, roi poll cho den khi thay credential moi ----
+document.getElementById("btnWaitFinger").addEventListener("click", async () => {
+  const emp = currentEmployee();
+  if (!emp.id) return;
+
+  const btn = document.getElementById("btnWaitFinger");
+  btn.disabled = true;
+
+  try {
+    showStatus("fingerStatus", "wait", "Dang lay slot ID va gui lenh xuong ESP32...");
+    const slotRes = await fetch(`${API}/devices/${DEVICE_ID}/next-slot`).then(r => r.json());
+    const slotId = slotRes.slot_id;
+
+    const before = await fetch(`${API}/employees/${emp.id}/credentials`).then(r => r.json());
+    const beforeIds = new Set(before.filter(c => c.type === "fingerprint" && c.is_active).map(c => c.id));
+
+    const triggerRes = await fetch(`${API}/devices/${DEVICE_ID}/enroll-fingerprint`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ employee_code: emp.code, slot_id: slotId }),
+    });
+    if (!triggerRes.ok) {
+      const err = await triggerRes.json();
+      showStatus("fingerStatus", "err", "Khong gui duoc lenh: " + (err.detail || JSON.stringify(err)));
+      btn.disabled = false;
+      return;
+    }
+
+    showStatus("fingerStatus", "wait",
+      `Da gui lenh (slot #${slotId}) - dat ngon tay len cam bien AS608 2 lan khi ESP32 yeu cau... (toi da 60s)`);
+
+    const start = Date.now();
+    let lastStep = "";
+    const timer = setInterval(async () => {
+      if (Date.now() - start > 60000) {
+        clearInterval(timer);
+        btn.disabled = false;
+        showStatus("fingerStatus", "err", "Het thoi gian cho (60s) - kiem tra lai ESP32/MQTT/backend.");
+        return;
+      }
+
+      // Hien thi tien trinh tung buoc (giong dang xem Serial Monitor cua ESP32)
+      try {
+        const progress = await fetch(`${API}/devices/${DEVICE_ID}/enroll-progress`).then(r => r.json());
+        if (progress.step && progress.step !== lastStep) {
+          lastStep = progress.step;
+          const cls = progress.step === "error" ? "err" : "wait";
+          showStatus("fingerStatus", cls, `[${slotId}] ${progress.message}`);
+          if (progress.step === "error") {
+            clearInterval(timer);
+            btn.disabled = false;
+            return;
+          }
+        }
+      } catch (e) { /* bo qua loi tam thoi khi poll tien trinh */ }
+
+      const list = await fetch(`${API}/employees/${emp.id}/credentials`).then(r => r.json());
+      const found = list.find(c => c.type === "fingerprint" && c.is_active && !beforeIds.has(c.id));
+      if (found) {
+        clearInterval(timer);
+        btn.disabled = false;
+        showStatus("fingerStatus", "ok", `Dang ky van tay thanh cong cho ${emp.code}! Credential ID: ${found.id}`);
+      }
+    }, 700);
+  } catch (e) {
+    showStatus("fingerStatus", "err", "Loi ket noi: " + e.message);
+    btn.disabled = false;
+  }
+});
+
+// ---- Test khuon mat: chup anh, so voi embedding da luu cua nhan vien dang chon ----
+let streamVerify = null;
+
+document.getElementById("btnStartCamVerify").addEventListener("click", async () => {
+  try {
+    streamVerify = await navigator.mediaDevices.getUserMedia({ video: true });
+    document.getElementById("videoVerify").srcObject = streamVerify;
+    document.getElementById("btnVerifyFace").disabled = false;
+  } catch (e) {
+    showStatus("faceVerifyStatus", "err", "Khong mo duoc camera: " + e.message);
+  }
+});
+
+document.getElementById("btnVerifyFace").addEventListener("click", async () => {
+  const emp = currentEmployee();
+  if (!emp.id) return;
+
+  const video = document.getElementById("videoVerify");
+  const canvas = document.getElementById("canvasVerify");
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  canvas.getContext("2d").drawImage(video, 0, 0);
+  const imageBase64 = canvas.toDataURL("image/jpeg", 0.9);
+
+  showStatus("faceVerifyStatus", "wait", "Dang so sanh voi du lieu da dang ky...");
+  document.getElementById("btnVerifyFace").disabled = true;
+
+  try {
+    const res = await fetch(`${API}/employees/${emp.id}/credentials/face/verify`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ employee_id: emp.id, image_base64: imageBase64 }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      showStatus("faceVerifyStatus", "err", "Loi: " + (data.detail || JSON.stringify(data)));
+    } else {
+      const okClass = data.result === "accepted" ? "ok" : "err";
+      const matchText = data.verified
+        ? `KHOP - dung la ${emp.code}`
+        : `KHONG KHOP voi ${emp.code}`;
+      showStatus("faceVerifyStatus", okClass,
+        `${matchText} (distance=${data.distance.toFixed(4)}, nguong=${data.threshold}) -> ket qua: ${data.result.toUpperCase()}`);
+    }
+  } catch (e) {
+    showStatus("faceVerifyStatus", "err", "Loi ket noi: " + e.message);
+  } finally {
+    document.getElementById("btnVerifyFace").disabled = false;
+  }
+});
+
+// ---- Test van tay: goi lenh verify xuong ESP32, poll tien trinh + ket qua ----
+document.getElementById("btnVerifyFinger").addEventListener("click", async () => {
+  const emp = currentEmployee();
+  if (!emp.id) return;
+
+  const btn = document.getElementById("btnVerifyFinger");
+  btn.disabled = true;
+
+  try {
+    showStatus("fingerVerifyStatus", "wait", "Dang gui lenh xac thuc xuong ESP32...");
+    const triggerRes = await fetch(`${API}/devices/${DEVICE_ID}/verify-fingerprint`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ employee_code: emp.code, employee_id: emp.id }),
+    });
+    const triggerData = await triggerRes.json();
+    if (!triggerRes.ok) {
+      showStatus("fingerVerifyStatus", "err", "Loi: " + (triggerData.detail || JSON.stringify(triggerData)));
+      btn.disabled = false;
+      return;
+    }
+
+    showStatus("fingerVerifyStatus", "wait", "Da gui lenh - dat ngon tay len cam bien AS608... (toi da 30s)");
+
+    const start = Date.now();
+    let lastStep = "";
+    const timer = setInterval(async () => {
+      if (Date.now() - start > 30000) {
+        clearInterval(timer);
+        btn.disabled = false;
+        showStatus("fingerVerifyStatus", "err", "Het thoi gian cho (30s) - kiem tra lai ESP32/MQTT/backend.");
+        return;
+      }
+
+      try {
+        const progress = await fetch(`${API}/devices/${DEVICE_ID}/enroll-progress`).then(r => r.json());
+        if (progress.step && progress.step !== lastStep && progress.step !== "idle") {
+          lastStep = progress.step;
+          showStatus("fingerVerifyStatus", "wait", progress.message);
+        }
+      } catch (e) { /* bo qua loi tam thoi */ }
+
+      const result = await fetch(`${API}/devices/${DEVICE_ID}/verify-result`).then(r => r.json());
+      if (result.matched !== undefined) {
+        clearInterval(timer);
+        btn.disabled = false;
+        const resultTag = result.result ? ` -> ket qua: ${result.result.toUpperCase()}` : "";
+        if (result.matched) {
+          showStatus("fingerVerifyStatus", result.result === "accepted" ? "ok" : "err",
+            `KHOP - dung la ${emp.code}! (do tin cay=${result.confidence})${resultTag}`);
+        } else {
+          showStatus("fingerVerifyStatus", "err",
+            `KHONG KHOP voi ${emp.code} (ID tim thay: ${result.found_id ?? "khong tim thay"})${resultTag}`);
+        }
+      }
+    }, 700);
+  } catch (e) {
+    showStatus("fingerVerifyStatus", "err", "Loi ket noi: " + e.message);
+    btn.disabled = false;
+  }
+});
+
+loadEmployees();
+</script>
+</body>
+</html>

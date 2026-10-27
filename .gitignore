@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+backend/.env
+
+# Python venvs rieng (DeepFace, YOLOv8) - rat nang, cai lai bang requirements khi can
+ai_env/
+yolo_env/
+
+# Node / frontend
+frontend/node_modules/
+frontend/dist/
+
+# Arduino build cache (neu co, thuong nam ngoai project nhung phong truong hop)
+firmware/**/build/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+
+# Claude Code: settings.local.json la permission allowlist rieng cua may/nguoi dung,
+# khong phai config chung cua project - launch.json thi giu lai (huu ich, dung chung duoc)
+.claude/settings.local.json
+
+# Model weight YOLOv8 - tai lai duoc qua ultralytics, khong can commit binary
+*.pt
+
+# Log file chay thu
+backend/server.log
+*.log
+
+# Anh khuon mat that (du lieu test) - dung tinh than thiet ke "khong giu anh goc lau hon can
+# thiet" da chot tu dau du an - van nam tren dia binh thuong, cac script test van chay duoc,
+# chi khong dua vao lich su git (phong khi sau nay day repo nay len dau do de backup)
+test_data/*.jpg
+test_data/*.jpeg
+test_data/*.png
