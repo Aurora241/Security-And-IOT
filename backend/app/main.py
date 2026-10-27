@@ -6,6 +6,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.api.v1 import employees, access_credentials, access_logs, access_policies, devices
+from app.api.v1 import alarm
 from app.services import mqtt_subscriber
 
 
@@ -42,6 +43,7 @@ app.include_router(access_credentials.router, prefix="/api/v1")
 app.include_router(access_logs.router, prefix="/api/v1")
 app.include_router(access_policies.router, prefix="/api/v1")
 app.include_router(devices.router, prefix="/api/v1")
+app.include_router(alarm.router, prefix="/api/v1")
 
 
 @app.get("/health")
