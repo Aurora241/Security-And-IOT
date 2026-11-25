@@ -4,10 +4,20 @@ from uuid import UUID
 from fastapi import APIRouter, HTTPException
 
 from app.core.supabase_client import get_supabase
-from app.models.alarm import DetectionReport, DetectionResult
-from app.services import alarm_control
+from app.models.alarm import AlarmZoneUpdate, DetectionReport, DetectionResult
+from app.services import access_control, alarm_control, audit_log
 
 router = APIRouter(prefix="/alarm", tags=["alarm"])
+
+
+def _validate_schedule_range(start: str, end: str) -> None:
+    try:
+        access_control.parse_time(start)
+        access_control.parse_time(end)
+    except (ValueError, IndexError):
+        raise HTTPException(status_code=400, detail="active_schedule.start/end phai dang HH:MM")
+    # Khung gio cam duoc PHEP vat qua nua dem (vd 20:00-07:00, xu ly rieng trong
+    # alarm_control._time_in_forbidden_window) nen KHONG kiem tra start < end nhu access_policies.
 
 
 @router.post("/detections", response_model=DetectionResult)
@@ -42,6 +52,41 @@ def list_alarm_events(limit: int = 50):
         .execute()
     )
     return result.data
+
+
+@router.get("/zones")
+def list_alarm_zones():
+    result = get_supabase().table("alarm_zones").select("*").execute()
+    return result.data
+
+
+@router.patch("/zones/{zone_id}")
+def update_alarm_zone(zone_id: UUID, payload: AlarmZoneUpdate):
+    update_data = payload.model_dump(exclude_none=True)
+    if not update_data:
+        raise HTTPException(status_code=400, detail="Khong co truong nao de cap nhat")
+
+    if "active_schedule" in update_data:
+        _validate_schedule_range(update_data["active_schedule"]["start"], update_data["active_schedule"]["end"])
+
+    result = (
+        get_supabase()
+        .table("alarm_zones")
+        .update(update_data)
+        .eq("id", str(zone_id))
+        .execute()
+    )
+    if not result.data:
+        raise HTTPException(status_code=404, detail="Khong tim thay alarm_zone")
+
+    zone = result.data[0]
+    audit_log.log_action(
+        action="update_alarm_zone",
+        target_type="alarm_zone",
+        target_id=zone["id"],
+        detail=update_data,
+    )
+    return zone
 
 
 @router.patch("/events/{event_id}/acknowledge")
