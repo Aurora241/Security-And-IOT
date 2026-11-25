@@ -16,3 +16,13 @@ class DetectionReport(BaseModel):
 class DetectionResult(BaseModel):
     status: str  # "intrusion" | "ignored_not_armed" | "ignored_cooldown"
     event_id: Optional[UUID] = None
+
+
+class AlarmZoneSchedule(BaseModel):
+    start: str  # "HH:MM" hoac "HH:MM:SS"
+    end: str
+
+
+class AlarmZoneUpdate(BaseModel):
+    is_armed: Optional[bool] = None
+    active_schedule: Optional[AlarmZoneSchedule] = None

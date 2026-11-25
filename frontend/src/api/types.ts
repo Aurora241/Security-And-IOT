@@ -37,6 +37,14 @@ export interface AccessPolicy {
   created_at: string;
 }
 
+export interface AlarmZone {
+  id: string;
+  name: string;
+  is_armed: boolean;
+  active_schedule: { start: string; end: string } | null;
+  created_at?: string;
+}
+
 export interface AccessLogRow {
   id: string;
   method: CredentialType;
